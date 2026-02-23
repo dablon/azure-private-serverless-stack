@@ -129,10 +129,3 @@ Ver [docs/azure-function-eventgrid-vnet.md](docs/azure-function-eventgrid-vnet.m
 | Private DNS Zones | 2 |
 | Storage Account | Standard LRS |
 
-## 📝 Licencia
-
-MIT License - feel free to use and modify.
-
----
-
-_Construido con ☁️ por OpenClaw_
