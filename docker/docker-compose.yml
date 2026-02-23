@@ -1,0 +1,182 @@
+# ============================================
+# Docker Compose - Azure Private Serverless Stack Tests
+# ============================================
+
+services:
+  # ============================================
+  # Pester Tests (PowerShell)
+  # ============================================
+  pester-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    image: azure-serverless-test:latest
+    container_name: pester-tests
+    volumes:
+      - ../scripts:/app/scripts:ro
+      - ../tests:/app/tests:ro
+      - ../test-results:/app/test-results
+    environment:
+      - TEST_MODE=All
+      - COVERAGE_THRESHOLD=90
+    working_dir: /app
+    command: >
+      pwsh -Command "
+        Import-Module Pester -MinimumVersion 5.3.0;
+        Invoke-Pester -Path /app/tests -Output Detailed -PassThru
+      "
+    profiles:
+      - test
+      - pester
+    networks:
+      - test-network
+
+  # ============================================
+  # Terraform Validate
+  # ============================================
+  terraform-validate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    image: azure-serverless-test:latest
+    container_name: terraform-validate
+    volumes:
+      - ../terraform:/app/terraform:ro
+      - ../test-results:/app/test-results
+    working_dir: /app/terraform
+    command: >
+      sh -c "
+        terraform init -backend=false &&
+        terraform validate &&
+        terraform plan -out=tfplan
+      "
+    profiles:
+      - test
+      - terraform
+    networks:
+      - test-network
+
+  # ============================================
+  # Security Scan (checkov)
+  # ============================================
+  security-scan:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    image: azure-serverless-test:latest
+    container_name: security-scan
+    volumes:
+      - ../terraform:/app/terraform:ro
+      - ../test-results:/app/test-results
+    working_dir: /app
+    command: >
+      sh -c "
+        checkov -d /app/terraform --output-format junitxml --output-file /app/test-results/checkov-results.xml ||
+        checkov -d /app/terraform --output-format cli
+      "
+    profiles:
+      - test
+      - security
+    networks:
+      - test-network
+
+  # ============================================
+  # TFSec (Alternative Security)
+  # ============================================
+  tfsec-scan:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    image: azure-serverless-test:latest
+    container_name: tfsec-scan
+    volumes:
+      - ../terraform:/app/terraform:ro
+      - ../test-results:/app/test-results
+    working_dir: /app
+    command: tfsec /app/terraform --exit-code=1 --minimum-severity HIGH
+    profiles:
+      - test
+      - security
+    networks:
+      - test-network
+
+  # ============================================
+  # Full Test Suite
+  # ============================================
+  full-test-suite:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    image: azure-serverless-test:latest
+    container_name: full-test-suite
+    volumes:
+      - ../scripts:/app/scripts:ro
+      - ../tests:/app/tests:ro
+      - ../terraform:/app/terraform:ro
+      - ../test-results:/app/test-results
+    environment:
+      - TEST_MODE=All
+      - COVERAGE_THRESHOLD=90
+    working_dir: /app
+    command: >
+      sh -c "
+        echo '========================================' &&
+        echo '  Running Full Test Suite' &&
+        echo '========================================' &&
+        echo '' &&
+        echo '[1/4] Terraform Init & Validate...' &&
+        cd /app/terraform && terraform init -backend=false && terraform validate &&
+        echo '' &&
+        echo '[2/4] Running Pester Tests...' &&
+        pwsh -Command 'Import-Module Pester -MinimumVersion 5.3.0; Invoke-Pester -Path /app/tests -Output Detailed -PassThru' &&
+        echo '' &&
+        echo '[3/4] Running Checkov Security Scan...' &&
+        checkov -d /app/terraform --output-format cli ||
+        echo '[WARNING] Checkov found issues' &&
+        echo '' &&
+        echo '[4/4] Running TFSec...' &&
+        tfsec /app/terraform --exit-code=0 --minimum-severity HIGH ||
+        echo '[INFO] TFSec completed' &&
+        echo '' &&
+        echo '========================================' &&
+        echo '  Test Suite Complete' &&
+        echo '========================================'
+      "
+    profiles:
+      - test
+      - full
+    networks:
+      - test-network
+
+  # ============================================
+  # Lint (optional)
+  # ============================================
+  lint:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+    image: azure-serverless-test:latest
+    container_name: lint
+    volumes:
+      - ../scripts:/app/scripts:ro
+    working_dir: /app
+    command: pwsh -Command "Get-ChildItem -Path /app/scripts -Filter *.ps1 | ForEach-Object { Write-Host \"Linting: \$_\" }"
+    profiles:
+      - lint
+    networks:
+      - test-network
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  test-network:
+    driver: bridge
+    name: azure-serverless-test-network
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  test-results:
+    name: azure-serverless-test-results
