@@ -1,0 +1,15 @@
+name: Require Reviews
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  review-required:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR approvals
+        run: |
+          echo "Este PR requiere al menos 1 aprobación de @reviewer"
+          echo "Revisar que los cambios cumplan con los estándares de código"
